@@ -304,6 +304,8 @@ test_expect_success SYMLINKS 'setup repo with manually symlinked or unknown file
 		ln -s ../an-object $obj &&
 
 		cd ../ &&
+		find . -type f | sort >../../../T.objects-files.raw &&
+		find . -type l | sort >../../../T.objects-symlinks.raw &&
 		echo unknown_content >unknown_file
 	) &&
 	git -C T fsck &&
@@ -312,32 +314,44 @@ test_expect_success SYMLINKS 'setup repo with manually symlinked or unknown file
 
 
 test_expect_success SYMLINKS 'clone repo with symlinked or unknown files at objects/' '
-	# None of these options work when cloning locally, since T has
-	# symlinks in its `$GIT_DIR/objects` directory
-	for option in --local --no-hardlinks --dissociate
+	for option in --local --no-hardlinks --shared --dissociate
 	do
-		test_must_fail git clone $option T T$option 2>err || return 1 &&
-		test_grep "symlink.*exists" err || return 1
+		git clone $option T T$option || return 1 &&
+		git -C T$option fsck || return 1 &&
+		git -C T$option rev-list --all --objects >T$option.objects &&
+		test_cmp T.objects T$option.objects &&
+		(
+			cd T$option/.git/objects &&
+			find . -type f | sort >../../../T$option.objects-files.raw &&
+			find . -type l | sort >../../../T$option.objects-symlinks.raw
+		)
 	done &&
-
-	# But `--shared` clones should still work, even when specifying
-	# a local path *and* that repository has symlinks present in its
-	# `$GIT_DIR/objects` directory.
-	git clone --shared T T--shared &&
-	git -C T--shared fsck &&
-	git -C T--shared rev-list --all --objects >T--shared.objects &&
-	test_cmp T.objects T--shared.objects &&
-	(
-		cd T--shared/.git/objects &&
-		find . -type f | sort >../../../T--shared.objects-files.raw &&
-		find . -type l | sort >../../../T--shared.objects-symlinks.raw
-	) &&
 
 	for raw in $(ls T*.raw)
 	do
 		sed -e "s!/../!/Y/!; s![0-9a-f]\{38,\}!Z!" -e "/commit-graph/d" \
 		    -e "/multi-pack-index/d" -e "/rev/d" <$raw >$raw.de-sha-1 &&
 		sort $raw.de-sha-1 >$raw.de-sha || return 1
+	done &&
+
+	cat >expected-files <<-EOF &&
+	./Y/Z
+	./Y/Z
+	./Y/Z
+	./a-loose-dir/Z
+	./an-object
+	./info/packs
+	./pack/pack-Z.idx
+	./pack/pack-Z.pack
+	./packs/pack-Z.idx
+	./packs/pack-Z.pack
+	./unknown_file
+	EOF
+
+	for option in --local --no-hardlinks --dissociate
+	do
+		test_cmp expected-files T$option.objects-files.raw.de-sha || return 1 &&
+		test_must_be_empty T$option.objects-symlinks.raw.de-sha || return 1
 	done &&
 
 	echo ./info/alternates >expected-files &&
@@ -358,7 +372,7 @@ test_expect_success SYMLINKS 'clone repo with symlinked objects directory' '
 	test_must_fail git clone --local malicious clone 2>err &&
 
 	test_path_is_missing clone &&
-	grep "is a symlink, refusing to clone with --local" err
+	grep "failed to start iterator over" err
 '
 
 test_done

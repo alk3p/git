@@ -176,7 +176,10 @@ static int prepare_next_entry_data(struct dir_iterator_int *iter,
 	iter->base.basename = iter->base.path.buf +
 			      iter->levels[iter->levels_nr - 1].prefix_len;
 
-	err = lstat(iter->base.path.buf, &iter->base.st);
+	if (iter->flags & DIR_ITERATOR_FOLLOW_SYMLINKS)
+		err = stat(iter->base.path.buf, &iter->base.st);
+	else
+		err = lstat(iter->base.path.buf, &iter->base.st);
 
 	saved_errno = errno;
 	if (err && errno != ENOENT)
@@ -283,10 +286,13 @@ struct dir_iterator *dir_iterator_begin(const char *path, unsigned int flags)
 	iter->flags = flags;
 
 	/*
-	 * Note: lstat already checks for NULL or empty strings and
+	 * Note: stat/lstat already checks for NULL or empty strings and
 	 * nonexistent paths.
 	 */
-	err = lstat(iter->base.path.buf, &iter->base.st);
+	if (iter->flags & DIR_ITERATOR_FOLLOW_SYMLINKS)
+		err = stat(iter->base.path.buf, &iter->base.st);
+	else
+		err = lstat(iter->base.path.buf, &iter->base.st);
 
 	if (err < 0) {
 		saved_errno = errno;

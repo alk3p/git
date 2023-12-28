@@ -329,6 +329,8 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
 	int src_len, dest_len;
 	struct dir_iterator *iter;
 	int iter_status;
+	unsigned int flags;
+	struct strbuf realpath = STRBUF_INIT;
 
 	/*
 	 * Refuse copying directories by default which aren't owned by us. The
@@ -346,20 +348,11 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
 
 	mkdir_if_missing(dest->buf, 0777);
 
-	iter = dir_iterator_begin(src->buf, DIR_ITERATOR_PEDANTIC);
+	flags = DIR_ITERATOR_PEDANTIC | DIR_ITERATOR_FOLLOW_SYMLINKS;
+	iter = dir_iterator_begin(src->buf, flags);
 
-	if (!iter) {
-		if (errno == ENOTDIR) {
-			int saved_errno = errno;
-			struct stat st;
-
-			if (!lstat(src->buf, &st) && S_ISLNK(st.st_mode))
-				die(_("'%s' is a symlink, refusing to clone with --local"),
-				    src->buf);
-			errno = saved_errno;
-		}
+	if (!iter)
 		die_errno(_("failed to start iterator over '%s'"), src->buf);
-	}
 
 	strbuf_addch(src, '/');
 	src_len = src->len;
@@ -371,10 +364,6 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
 		strbuf_addstr(src, iter->relative_path);
 		strbuf_setlen(dest, dest_len);
 		strbuf_addstr(dest, iter->relative_path);
-
-		if (S_ISLNK(iter->st.st_mode))
-			die(_("symlink '%s' exists, refusing to clone with --local"),
-			    iter->relative_path);
 
 		if (S_ISDIR(iter->st.st_mode)) {
 			mkdir_if_missing(dest->buf, 0777);
