@@ -58,11 +58,6 @@ never use the local optimizations).  Specifying `--no-local` will
 override the default when `/path/to/repo` is given, using the regular
 Git transport instead.
 +
-If the repository's `$GIT_DIR/objects` has symbolic links or is a
-symbolic link, the clone will fail. This is a security measure to
-prevent the unintentional copying of files by dereferencing the symbolic
-links.
-+
 This option does not work with repositories owned by other users for security
 reasons, and `--no-local` must be specified for the clone to succeed.
 +
