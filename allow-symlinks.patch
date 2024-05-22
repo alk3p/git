@@ -1,0 +1,351 @@
+From e769e6e83f70d66e009eae12e6caffeef64c5e30 Mon Sep 17 00:00:00 2001
+From: alk3pInjection <webmaster@raspii.tech>
+Date: Thu, 28 Dec 2023 15:32:25 +0800
+Subject: [PATCH] Reallow local clones with symlinks
+
+Git fucked up this behavior out of non-sense security concerns.
+
+Due to their kind consideration, users are now constrained to
+use Git transport and enjoy the sensation of returning to the
+33k dial-up era while everything is on the local disk.
+
+Revert "Merge branch 'tb/drop-dir-iterator-follow-symlink-bit'"
+
+This reverts commit b8840a72e25176681eaeea88d9a61aa4a02738cf, reversing
+changes made to 63f74cfbcc608fc2b379680ba4f9181792996081.
+
+Revert "builtin/clone.c: disallow `--local` clones with symlinks"
+
+This reverts commit 6f054f9fb3a501c35b55c65e547a244f14c38d56.
+
+Revert "clone: error specifically with --local and symlinked objects"
+
+This reverts commit 4e33535ea98ac16d2163e8e9fcbba5e015881e65.
+
+Signed-off-by: alk3pInjection <webmaster@raspii.tech>
+---
+ Documentation/git-clone.txt  |  5 ----
+ builtin/clone.c              | 21 ++++-----------
+ dir-iterator.c               | 12 ++++++---
+ dir-iterator.h               | 20 +++++++++++++-
+ t/helper/test-dir-iterator.c |  6 +++--
+ t/t0066-dir-iterator.sh      | 44 ++++++++++++++++++++++++++++--
+ t/t5604-clone-reference.sh   | 52 +++++++++++++++++++++++-------------
+ 7 files changed, 112 insertions(+), 48 deletions(-)
+
+diff --git a/Documentation/git-clone.txt b/Documentation/git-clone.txt
+index 5de18de2ab..6d62263f32 100644
+--- a/Documentation/git-clone.txt
++++ b/Documentation/git-clone.txt
+@@ -58,11 +58,6 @@ never use the local optimizations).  Specifying `--no-local` will
+ override the default when `/path/to/repo` is given, using the regular
+ Git transport instead.
+ +
+-If the repository's `$GIT_DIR/objects` has symbolic links or is a
+-symbolic link, the clone will fail. This is a security measure to
+-prevent the unintentional copying of files by dereferencing the symbolic
+-links.
+-+
+ *NOTE*: this operation can race with concurrent modification to the
+ source repository, similar to running `cp -r src dst` while modifying
+ `src`.
+diff --git a/builtin/clone.c b/builtin/clone.c
+index 221edbcdee..6f0a16a04b 100644
+--- a/builtin/clone.c
++++ b/builtin/clone.c
+@@ -329,6 +329,8 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
+ 	int src_len, dest_len;
+ 	struct dir_iterator *iter;
+ 	int iter_status;
++	unsigned int flags;
++	struct strbuf realpath = STRBUF_INIT;
+ 
+ 	/*
+ 	 * Refuse copying directories by default which aren't owned by us. The
+@@ -346,20 +348,11 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
+ 
+ 	mkdir_if_missing(dest->buf, 0777);
+ 
+-	iter = dir_iterator_begin(src->buf, DIR_ITERATOR_PEDANTIC);
++	flags = DIR_ITERATOR_PEDANTIC | DIR_ITERATOR_FOLLOW_SYMLINKS;
++	iter = dir_iterator_begin(src->buf, flags);
+ 
+-	if (!iter) {
+-		if (errno == ENOTDIR) {
+-			int saved_errno = errno;
+-			struct stat st;
+-
+-			if (!lstat(src->buf, &st) && S_ISLNK(st.st_mode))
+-				die(_("'%s' is a symlink, refusing to clone with --local"),
+-				    src->buf);
+-			errno = saved_errno;
+-		}
++	if (!iter)
+ 		die_errno(_("failed to start iterator over '%s'"), src->buf);
+-	}
+ 
+ 	strbuf_addch(src, '/');
+ 	src_len = src->len;
+@@ -372,10 +365,6 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
+ 		strbuf_setlen(dest, dest_len);
+ 		strbuf_addstr(dest, iter->relative_path);
+ 
+-		if (S_ISLNK(iter->st.st_mode))
+-			die(_("symlink '%s' exists, refusing to clone with --local"),
+-			    iter->relative_path);
+-
+ 		if (S_ISDIR(iter->st.st_mode)) {
+ 			mkdir_if_missing(dest->buf, 0777);
+ 			continue;
+diff --git a/dir-iterator.c b/dir-iterator.c
+index de619846f2..06bbe2fe7a 100644
+--- a/dir-iterator.c
++++ b/dir-iterator.c
+@@ -176,7 +176,10 @@ static int prepare_next_entry_data(struct dir_iterator_int *iter,
+ 	iter->base.basename = iter->base.path.buf +
+ 			      iter->levels[iter->levels_nr - 1].prefix_len;
+ 
+-	err = lstat(iter->base.path.buf, &iter->base.st);
++	if (iter->flags & DIR_ITERATOR_FOLLOW_SYMLINKS)
++		err = stat(iter->base.path.buf, &iter->base.st);
++	else
++		err = lstat(iter->base.path.buf, &iter->base.st);
+ 
+ 	saved_errno = errno;
+ 	if (err && errno != ENOENT)
+@@ -283,10 +286,13 @@ struct dir_iterator *dir_iterator_begin(const char *path, unsigned int flags)
+ 	iter->flags = flags;
+ 
+ 	/*
+-	 * Note: lstat already checks for NULL or empty strings and
++	 * Note: stat/lstat already checks for NULL or empty strings and
+ 	 * nonexistent paths.
+ 	 */
+-	err = lstat(iter->base.path.buf, &iter->base.st);
++	if (iter->flags & DIR_ITERATOR_FOLLOW_SYMLINKS)
++		err = stat(iter->base.path.buf, &iter->base.st);
++	else
++		err = lstat(iter->base.path.buf, &iter->base.st);
+ 
+ 	if (err < 0) {
+ 		saved_errno = errno;
+diff --git a/dir-iterator.h b/dir-iterator.h
+index 6d438809b6..4a35ca4cbe 100644
+--- a/dir-iterator.h
++++ b/dir-iterator.h
+@@ -56,9 +56,25 @@
+  *   the API users may remove files during iteration.
+  *
+  * - DIR_ITERATOR_SORTED: sort directory entries alphabetically.
++ *
++ * - DIR_ITERATOR_FOLLOW_SYMLINKS: make dir-iterator follow symlinks.
++ *   i.e., linked directories' contents will be iterated over and
++ *   iter->base.st will contain information on the referred files,
++ *   not the symlinks themselves, which is the default behavior. Broken
++ *   symlinks are ignored.
++ *
++ *   Note: setting DIR_ITERATOR_FOLLOW_SYMLINKS affects resolving the
++ *   starting path as well (e.g., attempting to iterate starting at a
++ *   symbolic link pointing to a directory without FOLLOW_SYMLINKS will
++ *   result in an error).
++ *
++ * Warning: circular symlinks are also followed when
++ * DIR_ITERATOR_FOLLOW_SYMLINKS is set. The iteration may end up with
++ * an ELOOP if they happen and DIR_ITERATOR_PEDANTIC is set.
+  */
+ #define DIR_ITERATOR_PEDANTIC (1 << 0)
+ #define DIR_ITERATOR_SORTED   (1 << 1)
++#define DIR_ITERATOR_FOLLOW_SYMLINKS (1 << 2)
+ 
+ struct dir_iterator {
+ 	/* The current path: */
+@@ -75,7 +91,9 @@ struct dir_iterator {
+ 	const char *basename;
+ 
+ 	/*
+-	 * The result of calling lstat() on path.
++	 * The result of calling lstat() on path; or stat(), if the
++	 * DIR_ITERATOR_FOLLOW_SYMLINKS flag was set at
++	 * dir_iterator's initialization.
+ 	 */
+ 	struct stat st;
+ };
+diff --git a/t/helper/test-dir-iterator.c b/t/helper/test-dir-iterator.c
+index 6b297bd753..659b6bfa81 100644
+--- a/t/helper/test-dir-iterator.c
++++ b/t/helper/test-dir-iterator.c
+@@ -15,7 +15,7 @@ static const char *error_name(int error_number)
+ 
+ /*
+  * usage:
+- * tool-test dir-iterator [--pedantic] directory_path
++ * tool-test dir-iterator [--follow-symlinks] [--pedantic] directory_path
+  */
+ int cmd__dir_iterator(int argc, const char **argv)
+ {
+@@ -24,7 +24,9 @@ int cmd__dir_iterator(int argc, const char **argv)
+ 	int iter_status;
+ 
+ 	for (++argv, --argc; *argv && starts_with(*argv, "--"); ++argv, --argc) {
+-		if (strcmp(*argv, "--pedantic") == 0)
++		if (strcmp(*argv, "--follow-symlinks") == 0)
++			flags |= DIR_ITERATOR_FOLLOW_SYMLINKS;
++		else if (strcmp(*argv, "--pedantic") == 0)
+ 			flags |= DIR_ITERATOR_PEDANTIC;
+ 		else
+ 			die("invalid option '%s'", *argv);
+diff --git a/t/t0066-dir-iterator.sh b/t/t0066-dir-iterator.sh
+index 7d0a0da8c0..04b811622b 100755
+--- a/t/t0066-dir-iterator.sh
++++ b/t/t0066-dir-iterator.sh
+@@ -106,7 +106,13 @@ test_expect_success SYMLINKS 'setup dirs with symlinks' '
+ 	ln -s d dir4/a/e &&
+ 	ln -s ../b dir4/a/f &&
+ 
+-	ln -s dir4 dir5
++	mkdir -p dir5/a/b &&
++	mkdir -p dir5/a/c &&
++	ln -s ../c dir5/a/b/d &&
++	ln -s ../ dir5/a/b/e &&
++	ln -s ../../ dir5/a/b/f &&
++
++	ln -s dir4 dir6
+ '
+ 
+ test_expect_success SYMLINKS 'dir-iterator should not follow symlinks by default' '
+@@ -125,10 +131,44 @@ test_expect_success SYMLINKS 'dir-iterator should not follow symlinks by default
+ 	test_cmp expected-no-follow-sorted-output actual-no-follow-sorted-output
+ '
+ 
++test_expect_success SYMLINKS 'dir-iterator should follow symlinks w/ follow flag' '
++	cat >expected-follow-sorted-output <<-EOF &&
++	[d] (a) [a] ./dir4/a
++	[d] (a/f) [f] ./dir4/a/f
++	[d] (a/f/c) [c] ./dir4/a/f/c
++	[d] (b) [b] ./dir4/b
++	[d] (b/c) [c] ./dir4/b/c
++	[f] (a/d) [d] ./dir4/a/d
++	[f] (a/e) [e] ./dir4/a/e
++	EOF
++
++	test-tool dir-iterator --follow-symlinks ./dir4 >out &&
++	sort out >actual-follow-sorted-output &&
++
++	test_cmp expected-follow-sorted-output actual-follow-sorted-output
++'
++
+ test_expect_success SYMLINKS 'dir-iterator does not resolve top-level symlinks' '
+-	test_must_fail test-tool dir-iterator ./dir5 >out &&
++	test_must_fail test-tool dir-iterator ./dir6 >out &&
+ 
+ 	grep "ENOTDIR" out
+ '
+ 
++test_expect_success SYMLINKS 'dir-iterator resolves top-level symlinks w/ follow flag' '
++	cat >expected-follow-sorted-output <<-EOF &&
++	[d] (a) [a] ./dir6/a
++	[d] (a/f) [f] ./dir6/a/f
++	[d] (a/f/c) [c] ./dir6/a/f/c
++	[d] (b) [b] ./dir6/b
++	[d] (b/c) [c] ./dir6/b/c
++	[f] (a/d) [d] ./dir6/a/d
++	[f] (a/e) [e] ./dir6/a/e
++	EOF
++
++	test-tool dir-iterator --follow-symlinks ./dir6 >out &&
++	sort out >actual-follow-sorted-output &&
++
++	test_cmp expected-follow-sorted-output actual-follow-sorted-output
++'
++
+ test_done
+diff --git a/t/t5604-clone-reference.sh b/t/t5604-clone-reference.sh
+index 9b32db8478..091c25febc 100755
+--- a/t/t5604-clone-reference.sh
++++ b/t/t5604-clone-reference.sh
+@@ -304,6 +304,8 @@ test_expect_success SYMLINKS 'setup repo with manually symlinked or unknown file
+ 		ln -s ../an-object $obj &&
+ 
+ 		cd ../ &&
++		find . -type f | sort >../../../T.objects-files.raw &&
++		find . -type l | sort >../../../T.objects-symlinks.raw &&
+ 		echo unknown_content >unknown_file
+ 	) &&
+ 	git -C T fsck &&
+@@ -312,27 +314,19 @@ test_expect_success SYMLINKS 'setup repo with manually symlinked or unknown file
+ 
+ 
+ test_expect_success SYMLINKS 'clone repo with symlinked or unknown files at objects/' '
+-	# None of these options work when cloning locally, since T has
+-	# symlinks in its `$GIT_DIR/objects` directory
+-	for option in --local --no-hardlinks --dissociate
++	for option in --local --no-hardlinks --shared --dissociate
+ 	do
+-		test_must_fail git clone $option T T$option 2>err || return 1 &&
+-		test_grep "symlink.*exists" err || return 1
++		git clone $option T T$option || return 1 &&
++		git -C T$option fsck || return 1 &&
++		git -C T$option rev-list --all --objects >T$option.objects &&
++		test_cmp T.objects T$option.objects &&
++		(
++			cd T$option/.git/objects &&
++			find . -type f | sort >../../../T$option.objects-files.raw &&
++			find . -type l | sort >../../../T$option.objects-symlinks.raw
++		)
+ 	done &&
+ 
+-	# But `--shared` clones should still work, even when specifying
+-	# a local path *and* that repository has symlinks present in its
+-	# `$GIT_DIR/objects` directory.
+-	git clone --shared T T--shared &&
+-	git -C T--shared fsck &&
+-	git -C T--shared rev-list --all --objects >T--shared.objects &&
+-	test_cmp T.objects T--shared.objects &&
+-	(
+-		cd T--shared/.git/objects &&
+-		find . -type f | sort >../../../T--shared.objects-files.raw &&
+-		find . -type l | sort >../../../T--shared.objects-symlinks.raw
+-	) &&
+-
+ 	for raw in $(ls T*.raw)
+ 	do
+ 		sed -e "s!/../!/Y/!; s![0-9a-f]\{38,\}!Z!" -e "/commit-graph/d" \
+@@ -340,6 +334,26 @@ test_expect_success SYMLINKS 'clone repo with symlinked or unknown files at obje
+ 		sort $raw.de-sha-1 >$raw.de-sha || return 1
+ 	done &&
+ 
++	cat >expected-files <<-EOF &&
++	./Y/Z
++	./Y/Z
++	./Y/Z
++	./a-loose-dir/Z
++	./an-object
++	./info/packs
++	./pack/pack-Z.idx
++	./pack/pack-Z.pack
++	./packs/pack-Z.idx
++	./packs/pack-Z.pack
++	./unknown_file
++	EOF
++
++	for option in --local --no-hardlinks --dissociate
++	do
++		test_cmp expected-files T$option.objects-files.raw.de-sha || return 1 &&
++		test_must_be_empty T$option.objects-symlinks.raw.de-sha || return 1
++	done &&
++
+ 	echo ./info/alternates >expected-files &&
+ 	test_cmp expected-files T--shared.objects-files.raw &&
+ 	test_must_be_empty T--shared.objects-symlinks.raw
+@@ -358,7 +372,7 @@ test_expect_success SYMLINKS 'clone repo with symlinked objects directory' '
+ 	test_must_fail git clone --local malicious clone 2>err &&
+ 
+ 	test_path_is_missing clone &&
+-	grep "is a symlink, refusing to clone with --local" err
++	grep "failed to start iterator over" err
+ '
+ 
+ test_done
+-- 
+2.43.0
+

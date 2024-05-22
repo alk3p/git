@@ -1,7 +1,7 @@
 pkgbase = git
 	pkgdesc = the fast distributed version control system
 	pkgver = 2.45.2
-	pkgrel = 1
+	pkgrel = 2
 	url = https://git-scm.com/
 	install = git.install
 	arch = x86_64
@@ -39,11 +39,13 @@ pkgbase = git
 	source = git-daemon@.service
 	source = git-daemon.socket
 	source = git-sysusers.conf
+	source = allow-symlinks.patch
 	validpgpkeys = 96E07AF25771955980DAD10020D04E5A713660A7
 	sha256sums = 51bfe87eb1c02fed1484051875365eeab229831d30d0cec5d89a14f9e40e9adb
 	sha256sums = SKIP
 	sha256sums = 14c0b67cfe116b430645c19d8c4759419657e6809dfa28f438c33a005245ad91
 	sha256sums = ac4c90d62c44926e6d30d18d97767efc901076d4e0283ed812a349aece72f203
 	sha256sums = 7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45
+	sha256sums = 38f5d21228677608a115f99ffeea8977c4c020f655d36d68e5770a2d26534861
 
 pkgname = git

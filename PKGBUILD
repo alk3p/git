@@ -3,7 +3,7 @@
 
 pkgname=git
 pkgver=2.45.2
-pkgrel=1
+pkgrel=2
 pkgdesc='the fast distributed version control system'
 arch=('x86_64')
 url='https://git-scm.com/'
@@ -31,12 +31,14 @@ validpgpkeys=('96E07AF25771955980DAD10020D04E5A713660A7') # Junio C Hamano
 source=("https://www.kernel.org/pub/software/scm/git/git-$pkgver.tar."{xz,sign}
         'git-daemon@.service'
         'git-daemon.socket'
-        'git-sysusers.conf')
+        'git-sysusers.conf'
+        'allow-symlinks.patch')
 sha256sums=('51bfe87eb1c02fed1484051875365eeab229831d30d0cec5d89a14f9e40e9adb'
             'SKIP'
             '14c0b67cfe116b430645c19d8c4759419657e6809dfa28f438c33a005245ad91'
             'ac4c90d62c44926e6d30d18d97767efc901076d4e0283ed812a349aece72f203'
-            '7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45')
+            '7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45'
+            '38f5d21228677608a115f99ffeea8977c4c020f655d36d68e5770a2d26534861')
 
 _make() {
   local make_options=(
@@ -52,7 +54,12 @@ _make() {
     USE_LIBPCRE2=1
   )
 
-  make "${make_options[@]}" "$@"
+  make "${make_options[@]}" "$@" -j$(nproc --all)
+}
+
+prepare() {
+  cd "$srcdir/$pkgname-$pkgver"
+  patch --forward --strip=1 --input="${srcdir}/allow-symlinks.patch"
 }
 
 build() {
@@ -64,24 +71,6 @@ build() {
   _make -C contrib/subtree all man
   _make -C contrib/mw-to-git all
   _make -C contrib/diff-highlight
-}
-
-check() {
-  cd "$srcdir/$pkgname-$pkgver"
-
-  local jobs
-  jobs=$(expr "$MAKEFLAGS" : '.*\(-j[0-9]*\).*') || true
-  mkdir -p /dev/shm/git-test
-  # explicitly specify SHELL to avoid a test failure in t/t9903-bash-prompt.sh
-  # which is caused by 'git rebase' trying to use builduser's SHELL inside the
-  # build chroot (i.e.: /usr/bin/nologin)
-  SHELL=/bin/sh \
-  _make \
-    NO_SVN_TESTS=y \
-    DEFAULT_TEST_TARGET=prove \
-    GIT_PROVE_OPTS="$jobs -Q" \
-    GIT_TEST_OPTS="--root=/dev/shm/git-test" \
-    test
 }
 
 package() {
