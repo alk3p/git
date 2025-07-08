@@ -4,7 +4,7 @@
 
 pkgbase=git
 pkgname=(git git-zsh-completion)
-pkgver=2.50.0
+pkgver=2.50.1
 pkgrel=1
 pkgdesc='the fast distributed version control system'
 arch=('x86_64')
@@ -20,7 +20,7 @@ source=("git+https://github.com/git/git#tag=v${pkgver}?signed"
         'git-daemon@.service'
         'git-daemon.socket'
         'git-sysusers.conf')
-sha256sums=('5bc0f41dffa59daceb8c66762d0dba9f26509bcbb2925cf23d218aae2898f4d2'
+sha256sums=('dd3397a458716923437a32ce896487a3500ac213aa575cd09d751e2dedab5eb8'
             '14c0b67cfe116b430645c19d8c4759419657e6809dfa28f438c33a005245ad91'
             'ac4c90d62c44926e6d30d18d97767efc901076d4e0283ed812a349aece72f203'
             '7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45')
