@@ -1,7 +1,7 @@
 pkgbase = git
 	pkgdesc = the fast distributed version control system
 	pkgver = 2.50.1
-	pkgrel = 1
+	pkgrel = 2
 	url = https://git-scm.com/
 	install = git.install
 	arch = x86_64
@@ -21,6 +21,7 @@ pkgbase = git
 	depends = grep
 	depends = shadow
 	depends = zlib-ng
+	optdepends = less: the default pager for git
 	source = git+https://github.com/git/git#tag=v2.50.1?signed
 	source = git-daemon@.service
 	source = git-daemon.socket
