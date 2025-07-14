@@ -1,7 +1,7 @@
 pkgbase = git
 	pkgdesc = the fast distributed version control system
 	pkgver = 2.50.1
-	pkgrel = 2
+	pkgrel = 3
 	url = https://git-scm.com/
 	install = git.install
 	arch = x86_64
@@ -21,7 +21,6 @@ pkgbase = git
 	depends = grep
 	depends = shadow
 	depends = zlib-ng
-	optdepends = less: the default pager for git
 	source = git+https://github.com/git/git#tag=v2.50.1?signed
 	source = git-daemon@.service
 	source = git-daemon.socket
@@ -49,6 +48,7 @@ pkgname = git
 	optdepends = subversion: git svn
 	optdepends = org.freedesktop.secrets: keyring credential helper
 	optdepends = libsecret: libsecret credential helper
+	optdepends = less: the default pager for git
 
 pkgname = git-zsh-completion
 	depends = git
