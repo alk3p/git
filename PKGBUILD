@@ -5,14 +5,14 @@
 pkgbase=git
 pkgname=(git git-zsh-completion)
 pkgver=2.52.0
-pkgrel=1
+pkgrel=2
 pkgdesc='the fast distributed version control system'
 arch=('x86_64')
 url='https://git-scm.com/'
 license=('GPL-2.0-only')
 depends=('curl' 'expat' 'perl' 'perl-error' 'perl-mailtools'
          'openssl' 'pcre2' 'grep' 'shadow' 'zlib-ng')
-makedepends=('python' 'xmlto' 'asciidoc' 'git')
+makedepends=('python' 'xmlto' 'asciidoc' 'git' 'rust')
 checkdepends=('openssh')
 install=git.install
 validpgpkeys=('96E07AF25771955980DAD10020D04E5A713660A7') # Junio C Hamano
@@ -38,6 +38,7 @@ _make() {
     NO_PERL_CPAN_FALLBACKS=1
     USE_LIBPCRE2=1
     ZLIB_NG=1
+    WITH_RUST=1
   )
 
   make "${make_options[@]}" "$@"
