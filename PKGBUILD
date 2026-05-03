@@ -5,7 +5,7 @@
 pkgbase=git
 pkgname=(git git-zsh-completion)
 pkgver=2.54.0
-pkgrel=1
+pkgrel=2
 pkgdesc='the fast distributed version control system'
 arch=('x86_64')
 url='https://git-scm.com/'
@@ -19,11 +19,13 @@ validpgpkeys=('96E07AF25771955980DAD10020D04E5A713660A7') # Junio C Hamano
 source=("git+https://github.com/git/git#tag=v${pkgver}?signed"
         'git-daemon@.service'
         'git-daemon.socket'
-        'git-sysusers.conf')
+        'git-sysusers.conf'
+        'allow-symlinks.patch')
 sha256sums=('a185bb4716fe77d02d8cf81080686c580fece76e0289593871810c83f2c912a1'
             '14c0b67cfe116b430645c19d8c4759419657e6809dfa28f438c33a005245ad91'
             'ac4c90d62c44926e6d30d18d97767efc901076d4e0283ed812a349aece72f203'
-            '7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45')
+            '7630e8245526ad80f703fac9900a1328588c503ce32b37b9f8811674fcda4a45'
+            'c18d3d2ef2aa43e8735321bbd65c29e4c56896ebadf2d5b17ee89e335c436b14')
 
 _make() {
   local make_options=(
@@ -41,7 +43,12 @@ _make() {
     WITH_RUST=1
   )
 
-  make "${make_options[@]}" "$@"
+  make "${make_options[@]}" "$@" -j$(nproc --all)
+}
+
+prepare() {
+  cd "$pkgbase"
+  patch --forward --strip=1 --input="${srcdir}/allow-symlinks.patch"
 }
 
 build() {
@@ -58,7 +65,7 @@ check() {
   cd "$pkgbase"
 
   local jobs
-  jobs=$(expr "$MAKEFLAGS" : '.*\(-j[0-9]*\).*') || true
+  jobs="-j$(nproc --all)"
   mkdir -p /dev/shm/git-test
   # explicitly specify SHELL to avoid a test failure in t/t9903-bash-prompt.sh
   # which is caused by 'git rebase' trying to use builduser's SHELL inside the
