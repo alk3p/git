@@ -48,7 +48,9 @@ _make() {
 
 prepare() {
   cd "$pkgbase"
-  patch --forward --strip=1 --input="${srcdir}/allow-symlinks.patch"
+  echo "v${pkgver}" > version
+
+  patch -Np1 -i "${srcdir}/allow-symlinks.patch"
 }
 
 build() {
